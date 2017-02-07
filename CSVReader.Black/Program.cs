@@ -12,33 +12,14 @@ namespace CSVReader.Black
     {
         static void Main(string[] args)
         {
-
-            string filePath = "data.csv";
-
-            //Console.WriteLine(fileContent);
-
-
-            CSVFile<Person> personCsv = new CSVFile<Person>(filePath, ',');
-
-            //Console.WriteLine(file.ToString());
-            //seperate("GET ROW");
-            //Console.WriteLine(file.GetRow(1).ToString());
-            //seperate("GET COLUMN {NAME}");
-            //file.GetColumnData("Name").ForEach(o => Console.WriteLine(o));
-            //seperate("Get Properties");
-
-            //file.GetDataAs<Employee>();
-
+            CSVFile<Person> personCsv = new CSVFile<Person>("data.csv", ',');
             List<Person> e = personCsv.GetData();
-
-            //Console.WriteLine("Name,Age");
             Console.WriteLine("{0, -15}|{1, -15}|{2, -15}|{3, -15}", "First Name", "Last Name", "Email", "Age");
             Console.WriteLine("----------------------------------------------------------------");
             e.ForEach(o =>
             {
                 Console.WriteLine("{0, -15}|{1, -15}|{2, -15}|{3, -15}", o.FirstName, o.LastName, o.Email, o.Age);
             });
-            //Console.WriteLine(e.Count);
             Console.Read();
         }
 
@@ -46,6 +27,7 @@ namespace CSVReader.Black
         {
             Console.WriteLine("{0}________________________________________________", header);
         }
+
         public class CSVFile<T> where T : class
         {
             private string fileContent;
@@ -55,10 +37,9 @@ namespace CSVReader.Black
             private List<string> _lines;
             private List<FileRow> _rows;
 
-
             public CSVFile(string path, char seperator)
             {
-                if (File.Exists(path))
+                if (File.Exists(path) && !string.IsNullOrEmpty(Convert.ToString(seperator)))
                 {
                     using (StreamReader reader = new StreamReader(path))
                     {
@@ -107,7 +88,6 @@ namespace CSVReader.Black
                         _rows.Add(row);
                     }
                 }
-
             }
 
             public List<T> GetData()
@@ -158,7 +138,6 @@ namespace CSVReader.Black
                 return fv;
             }
 
-
             public override string ToString()
             {
                 StringBuilder sb = new StringBuilder();
@@ -199,12 +178,6 @@ namespace CSVReader.Black
         {
             public string Name { get; set; }
             public string Value { get; set; }
-        }
-
-        public class Employee
-        {
-            public string Name { get; set; }
-            public string Age { get; set; }
         }
 
         public class Person
