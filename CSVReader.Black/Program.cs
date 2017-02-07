@@ -13,11 +13,12 @@ namespace CSVReader.Black
         {
             CSVFile<Person> personCsv = new CSVFile<Person>("data.csv", ',');
             List<Person> e = personCsv.GetData();
-            Console.WriteLine("{0, -15}|{1, -15}|{2, -15}|{3, -15}", "First Name", "Last Name", "Email", "Age");
+            string outputFormat = "{0, -15}|{1, -15}|{2, -15}|{3, -15}";
+            Console.WriteLine(outputFormat, "First Name", "Last Name", "Email", "Age");
             Console.WriteLine("----------------------------------------------------------------");
             e.ForEach(o =>
             {
-                Console.WriteLine("{0, -15}|{1, -15}|{2, -15}|{3, -15}", o.FirstName, o.LastName, o.Email, o.Age);
+                Console.WriteLine(outputFormat, o.FirstName, o.LastName, o.Email, o.Age);
             });
             Console.Read();
         }
