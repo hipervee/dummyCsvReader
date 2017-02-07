@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace CSVReader.Black
 {
@@ -21,11 +20,6 @@ namespace CSVReader.Black
                 Console.WriteLine("{0, -15}|{1, -15}|{2, -15}|{3, -15}", o.FirstName, o.LastName, o.Email, o.Age);
             });
             Console.Read();
-        }
-
-        static void seperate(string header)
-        {
-            Console.WriteLine("{0}________________________________________________", header);
         }
 
         public class CSVFile<T> where T : class
