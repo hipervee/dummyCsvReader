@@ -13,12 +13,12 @@ namespace CSVReader.Black
         {
             CSVFile<Person> personCsv = new CSVFile<Person>("data.csv", ',');
             List<Person> e = personCsv.GetData();
-            string outputFormat = "{0, -15}|{1, -15}|{2, -15}|{3, -15}";
-            Console.WriteLine(outputFormat, "First Name", "Last Name", "Email", "Age");
+            string outputFormat = "{0, -3}|{1, -15}|{2, -15}|{3, -15}|{4, -15}";
+            Console.WriteLine(outputFormat, "Id", "First Name", "Last Name", "Email", "Age");
             Console.WriteLine("----------------------------------------------------------------");
             e.ForEach(o =>
             {
-                Console.WriteLine(outputFormat, o.FirstName, o.LastName, o.Email, o.Age);
+                Console.WriteLine(outputFormat, o.Id, o.FirstName, o.LastName, o.Email, o.Age);
             });
             Console.Read();
         }
@@ -31,6 +31,8 @@ namespace CSVReader.Black
             private List<string> _headers;
             private List<string> _lines;
             private List<FileRow> _rows;
+            private List<Row<T>> _tuples;
+            private List<Type> supportedTypes;
 
             public CSVFile(string path, char seperator)
             {
@@ -44,8 +46,35 @@ namespace CSVReader.Black
                     _lines = new List<string>();
                     _headers = new List<string>();
                     _rows = new List<FileRow>();
+                    _tuples = new List<Row<T>>();
+                    initSupportedTypes();
                     ProcessFile();
                 }
+            }
+
+            void initSupportedTypes()
+            {
+                supportedTypes = new List<Type>()
+                {
+                    typeof(bool         ),
+                    typeof(string       ),
+                    typeof(String       ),
+                    typeof(Boolean      ),
+                    typeof(byte         ),
+                    typeof(Byte         ),
+                    typeof(SByte        ),
+                    typeof(int          ),
+                    typeof(Int16        ),
+                    typeof(UInt16       ),
+                    typeof(Int32        ),
+                    typeof(UInt32       ),
+                    typeof(Int64        ),
+                    typeof(UInt64       ),
+                    typeof(char         ),
+                    typeof(Char         ),
+                    typeof(Double       ),
+                    typeof(Single       )
+                };
             }
 
             void ProcessFile()
@@ -71,41 +100,73 @@ namespace CSVReader.Black
                     if (!string.IsNullOrEmpty(line))
                     {
                         FileRow row = new FileRow();
+                        Row<T> tuple = new Row<T>(line);
                         string[] values = line.Split(_seperator);
+
                         for (var i = 0; i < _headers.Count; i++)
                         {
-                            row.Values.Add(new FileValue()
+                            tuple.Values.Add(new FileValue()
                             {
                                 Name = _headers[i],
                                 Value = Convert.ToString(values[i])
                             });
                         }
                         _rows.Add(row);
+                        _tuples.Add(tuple);
                     }
                 }
             }
 
             public List<T> GetData()
             {
-                PropertyInfo[] properties = typeof(T).GetProperties();
+                List<PropertyInfo> properties = typeof(T).GetProperties().AsEnumerable().ToList();
                 List<T> data = new List<T>();
 
-                _rows.ForEach(row =>
+                _tuples.ForEach(tuple =>
                 {
-                    T obj = (T)Activator.CreateInstance(typeof(T));
-                    properties.AsEnumerable().ToList().ForEach(p =>
+                    try
                     {
-                        if (_headers.Any(o => o.ToLower() == p.Name.ToLower()))
+                        T obj = null;
+                        try
                         {
-                            if (p.PropertyType == typeof(string) && p.CanWrite)
-                            {
-                                p.SetValue(obj, row.GetValue(p.Name).Value);
-                            }
+                            Type t = typeof(T);
+                            obj = (T)Activator.CreateInstance(t);
                         }
-                    });
-                    data.Add(obj);
+                        catch (Exception e)
+                        {
+                            tuple.Error(ErrorStrings.InstanceNonCreatable);  
+                        }
+
+                        properties.ForEach(p =>
+                        {
+                            if (hasHeader(p.Name))
+                            {
+                                if (supportsType(p.PropertyType) && p.CanWrite)
+                                {
+                                    p.SetValue(obj, Convert.ChangeType(tuple.GetValue(p.Name).Value, p.PropertyType));
+                                }
+                            }
+                        });
+                        data.Add(obj);
+                    }
+                    catch (Exception ex)
+                    {
+
+                    }
+
+
                 });
                 return data;
+            }
+
+            bool supportsType(Type t)
+            {
+                return supportedTypes.Any(o => o == t);
+            }
+
+            bool hasHeader(string header)
+            {
+                return _headers.Any(o => o.ToLower() == header.ToLower());
             }
 
             FileRow GetRow(int index)
@@ -133,22 +194,80 @@ namespace CSVReader.Black
                 return fv;
             }
 
-            public override string ToString()
+            enum ErrorType
             {
-                StringBuilder sb = new StringBuilder();
-                sb.Append(string.Format("Header: [{0}] Data Columns)", _headers.Count));
-                sb.Append(Environment.NewLine);
-                sb.Append(_fileHeader);
-                sb.Append(Environment.NewLine);
-                sb.Append(string.Format("Data: [{0}] Data Rows", _rows.Count));
-                sb.Append(Environment.NewLine);
-                _lines.ForEach(o =>
-                {
-                    sb.Append(o);
-                    sb.Append(Environment.NewLine);
-                });
-                return sb.ToString();
+                DuplicateRow,
+                NotSerializable,
+                NotWritable,
+                InsufficientData
             }
+
+            public static class ErrorStrings
+            {
+                public static string DataNotSerializable = "Data in Specified Column Could not be serialized";
+                public static string ColumnTypeConversionNotSupported = "Column of Specified Type cannot be serialzed";
+                public static string InstanceNonCreatable = "Instance of Specified Type Could not be created";
+            }
+
+            public class Row<V> where V : class
+            {
+                public List<FileValue> Values { get; set; }
+                public Row(string line)
+                {
+                    rawString = line;
+                    validation = new Validation();
+                    Values = new List<FileValue>();
+                }
+                public V row { get; set; }
+                public string rawString { get; }
+                public Validation validation { get; set; }
+
+                public void Error(string error)
+                {
+                    validation.Error(error);
+                }
+
+                public FileValue GetValue(string Name)
+                {
+                    return Values.Where(o => o.Name.ToLower() == Name.ToLower()).FirstOrDefault();
+                }
+                public override string ToString()
+                {
+                    return string.Join(",", Values.Select(o => o.Value).ToArray());
+                }
+            }
+
+            public class Validation
+            {
+                List<string> Errors { get; set; }
+                public Validation()
+                {
+                    Errors = new List<string>();
+                }
+                public bool IsValid
+                {
+                    get
+                    {
+                        return Errors.Count == 0;
+                    }
+                }
+
+                public void Error(string column, string error)
+                {
+                    Errors.Add(string.Format("[{0}] - {1}", column, error));
+                }
+
+                public void Error(string error)
+                {
+                    Errors.Add(error);
+                }
+
+                void Error(ErrorType type, string error)
+                {
+                    Errors.Add(error);
+                }
+            }
+
         }
 
         public class FileRow
@@ -177,6 +296,7 @@ namespace CSVReader.Black
 
         public class Person
         {
+            public int Id { get; set; }
             public string FirstName { get; set; }
             public string LastName { get; set; }
             public string Age { get; set; }
