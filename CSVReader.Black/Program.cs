@@ -7,21 +7,24 @@ using System.Text;
 
 namespace CSVReader.Black
 {
+   
     class Program
     {
         static void Main(string[] args)
         {
             CSVFile<Person> personCsv = new CSVFile<Person>("data.csv", ',');
-            List<Person> e = personCsv.GetData();
-            string outputFormat = "{0, -3}|{1, -15}|{2, -15}|{3, -15}|{4, -15}";
-            Console.WriteLine(outputFormat, "Id", "First Name", "Last Name", "Email", "Age");
+            List<Row<Person>> e = personCsv.GetData();
+            string outputFormat = "[{0, -5}]|{1, -3}|{2, -15}|{3, -15}|{4, -15}|{5, -15} - [{6}]";
+            Console.WriteLine(outputFormat, "VALID", "Id", "First Name", "Last Name", "Email", "Age", "Error");
             Console.WriteLine("----------------------------------------------------------------");
             e.ForEach(o =>
             {
-                Console.WriteLine(outputFormat, o.Id, o.FirstName, o.LastName, o.Email, o.Age);
+                Console.WriteLine(outputFormat, o.Valid.ToString() ,  o.row.Id, o.row.FirstName, o.row.LastName, o.row.Email, o.row.Age, o.Valid ? "" : Convert.ToString(o.validation.Errors.FirstOrDefault()));
             });
             Console.Read();
         }
+
+
 
         public class CSVFile<T> where T : class
         {
@@ -117,46 +120,63 @@ namespace CSVReader.Black
                 }
             }
 
-            public List<T> GetData()
+            public List<Row<T>> GetData()
             {
                 List<PropertyInfo> properties = typeof(T).GetProperties().AsEnumerable().ToList();
                 List<T> data = new List<T>();
 
                 _tuples.ForEach(tuple =>
                 {
+
+                    T obj = null;
                     try
                     {
-                        T obj = null;
-                        try
-                        {
-                            Type t = typeof(T);
-                            obj = (T)Activator.CreateInstance(t);
-                        }
-                        catch (Exception e)
-                        {
-                            tuple.Error(ErrorStrings.InstanceNonCreatable);  
-                        }
-
+                        Type t = typeof(T);
+                        obj = (T)Activator.CreateInstance(t);
+                    }
+                    catch (Exception e)
+                    {
+                        tuple.Error(ErrorStrings.InstanceNonCreatable);
+                    }
+                    if (obj != null)
+                    {
                         properties.ForEach(p =>
                         {
                             if (hasHeader(p.Name))
                             {
-                                if (supportsType(p.PropertyType) && p.CanWrite)
+                                if (supportsType(p.PropertyType))
                                 {
-                                    p.SetValue(obj, Convert.ChangeType(tuple.GetValue(p.Name).Value, p.PropertyType));
+                                    if (p.CanWrite)
+                                    {
+                                        var value = tuple.GetValue(p.Name).Value;
+                                        try
+                                        {
+                                            p.SetValue(obj, Convert.ChangeType(value, p.PropertyType));
+                                        }
+                                        catch(Exception ex)
+                                        {
+                                            tuple.Error(string.Format("{0} of Property [{1}] with value [\"{2}\"] of type [{3}]", ErrorStrings.UnableToSetValue, p.Name, value, p.PropertyType.Name));
+                                        }      
+                                    }
+                                    else
+                                    {
+                                        tuple.Error(string.Format("[{0}] {1}", p.Name, ErrorStrings.PropertyNoWritable));
+                                    }
                                 }
+                                else
+                                {
+                                    tuple.Error(string.Format("[{0} - {1}] {2}", p.Name, p.PropertyType.Name, ErrorStrings.TypeNotSupported));
+                                }
+
                             }
                         });
+                        tuple.row = obj;
                         data.Add(obj);
                     }
-                    catch (Exception ex)
-                    {
-
-                    }
-
 
                 });
-                return data;
+                return _tuples;
+                //return data;
             }
 
             bool supportsType(Type t)
@@ -194,80 +214,90 @@ namespace CSVReader.Black
                 return fv;
             }
 
-            enum ErrorType
+        
+
+        }
+        enum ErrorType
+        {
+            DuplicateRow,
+            NotSerializable,
+            NotWritable,
+            InsufficientData
+        }
+        public static class ErrorStrings
+        {
+            public static string DataNotSerializable = "Data in Specified Column Could not be serialized";
+            public static string ColumnTypeConversionNotSupported = "Column of Specified Type cannot be serialzed";
+            public static string InstanceNonCreatable = "Instance of Specified Type Could not be created";
+            public static string TypeNotSupported = "Instance of Specified Type Could not be created";
+            public static string PropertyNoWritable = "Instance of Specified Type Could not be created";
+            public static string UnableToSetValue = "Unable to set value";
+
+        }
+
+        public class Validation
+        {
+            public List<string> Errors { get; set; }
+            public Validation()
             {
-                DuplicateRow,
-                NotSerializable,
-                NotWritable,
-                InsufficientData
+                Errors = new List<string>();
             }
-
-            public static class ErrorStrings
+            public bool IsValid
             {
-                public static string DataNotSerializable = "Data in Specified Column Could not be serialized";
-                public static string ColumnTypeConversionNotSupported = "Column of Specified Type cannot be serialzed";
-                public static string InstanceNonCreatable = "Instance of Specified Type Could not be created";
-            }
-
-            public class Row<V> where V : class
-            {
-                public List<FileValue> Values { get; set; }
-                public Row(string line)
+                get
                 {
-                    rawString = line;
-                    validation = new Validation();
-                    Values = new List<FileValue>();
-                }
-                public V row { get; set; }
-                public string rawString { get; }
-                public Validation validation { get; set; }
-
-                public void Error(string error)
-                {
-                    validation.Error(error);
-                }
-
-                public FileValue GetValue(string Name)
-                {
-                    return Values.Where(o => o.Name.ToLower() == Name.ToLower()).FirstOrDefault();
-                }
-                public override string ToString()
-                {
-                    return string.Join(",", Values.Select(o => o.Value).ToArray());
+                    return Errors.Count == 0;
                 }
             }
 
-            public class Validation
+            public void Error(string column, string error)
             {
-                List<string> Errors { get; set; }
-                public Validation()
-                {
-                    Errors = new List<string>();
-                }
-                public bool IsValid
-                {
-                    get
-                    {
-                        return Errors.Count == 0;
-                    }
-                }
+                Errors.Add(string.Format("[{0}] - {1}", column, error));
+            }
 
-                public void Error(string column, string error)
-                {
-                    Errors.Add(string.Format("[{0}] - {1}", column, error));
-                }
+            public void Error(string error)
+            {
+                Errors.Add(error);
+            }
 
-                public void Error(string error)
+            void Error(ErrorType type, string error)
+            {
+                Errors.Add(error);
+            }
+        }
+        public class Row<V> where V : class
+        {
+            public List<FileValue> Values { get; set; }
+            public V row { get; set; }
+            public string rawString { get; }
+            public Validation validation { get; set; }
+            public Row(string line)
+            {
+                rawString = line;
+                validation = new Validation();
+                Values = new List<FileValue>();
+            }
+            public bool Valid
+            {
+                get
                 {
-                    Errors.Add(error);
-                }
-
-                void Error(ErrorType type, string error)
-                {
-                    Errors.Add(error);
+                    return validation.IsValid;
                 }
             }
 
+            public void Error(string error)
+            {
+                validation.Error(error);
+            }
+
+            public FileValue GetValue(string Name)
+            {
+                return Values.Where(o => o.Name.ToLower() == Name.ToLower()).FirstOrDefault();
+            }
+            public override string ToString()
+            {
+                return string.Join(",", Values.Select(o => o.Value).ToArray());
+            }
         }
 
         public class FileRow
@@ -300,7 +330,7 @@ namespace CSVReader.Black
             public string FirstName { get; set; }
             public string LastName { get; set; }
             public string Age { get; set; }
-            public string Email { get; set; }
+            public List<string> Email { get; set; }
             public string Gender { get; set; }
         }
     }
