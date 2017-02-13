@@ -7,37 +7,90 @@ using System.Text;
 
 namespace CSVReader.Black
 {
-   
+
     class Program
     {
         static void Main(string[] args)
         {
-            CSVFile<Person> personCsv = new CSVFile<Person>("data.csv", ',');
-            List<Row<Person>> e = personCsv.GetData();
-            string outputFormat = "[{0, -5}]|{1, -3}|{2, -15}|{3, -15}|{4, -15}|{5, -15} - [{6}]";
-            Console.WriteLine(outputFormat, "VALID", "Id", "First Name", "Last Name", "Email", "Age", "Error");
-            Console.WriteLine("----------------------------------------------------------------");
-            e.ForEach(o =>
+            //CSV<Lookup> personCsv = new CSV<Lookup>("C:\\Temp\\lookups.csv", ',', "LookupTypeId");
+            //List<CSVRow<Lookup>> e = personCsv.GetData();
+            //string outputFormat = "[{0, -5}]|{1, -3}|{2, -15}|{3, -15}|{4, -15}|{5, -15}|{6, -15} - [{7}]";
+            ////Console.WriteLine(outputFormat, "VALID", "Id", "First Name", "Last Name", "Email", "Age", "Error");
+            //Console.WriteLine(outputFormat, "VALID", "LookupTypeID", "Name", "Description", "IsActive", "LookupTypeCategoryId", "ConfigDisplay", "Errors");
+            //Console.WriteLine("----------------------------------------------------------------");
+            //e.ForEach(o =>
+            //{
+            //    Console.WriteLine(outputFormat, o.Valid.ToString(), o.row.LookupTypeId, o.row.Name, o.row.Description, "", o.row.LookupTypeCategoryId, o.row.ConfigDisplay, o.Valid ? "" : Convert.ToString(o.validation.Errors.FirstOrDefault()));
+            //});
+            var supportedTypes = new List<Type>()
+                {
+                    typeof(bool         ),
+                    typeof(string       ),
+                    typeof(String       ),
+                    typeof(Boolean      ),
+                    typeof(byte         ),
+                    typeof(Byte         ),
+                    typeof(SByte        ),
+                    typeof(int          ),
+                    typeof(Int16        ),
+                    typeof(UInt16       ),
+                    typeof(Int32        ),
+                    typeof(UInt32       ),
+                    typeof(Int64        ),
+                    typeof(UInt64       ),
+                    typeof(char         ),
+                    typeof(Char         ),
+                    typeof(Double       ),
+                    typeof(Single       )
+                };
+            var obj = new Lookup();
+            string value = "2";
+            List<PropertyInfo> properties = typeof(Lookup).GetProperties().AsEnumerable().ToList();
+            properties.ForEach(p =>
             {
-                Console.WriteLine(outputFormat, o.Valid.ToString() ,  o.row.Id, o.row.FirstName, o.row.LastName, o.row.Email, o.row.Age, o.Valid ? "" : Convert.ToString(o.validation.Errors.FirstOrDefault()));
+                if (supportedTypes.Any(o => o == GetType(p)))
+                {
+                    if (Nullable.GetUnderlyingType(p.PropertyType) != null)
+                    {
+                        var val = Convert.ChangeType(value, Nullable.GetUnderlyingType(p.PropertyType));
+                        p.SetValue(obj, val);
+                        Console.WriteLine("{0} - {1}", p.Name, Nullable.GetUnderlyingType(p.PropertyType));
+                    }
+                    else
+                    {
+                        p.SetValue(obj, Convert.ChangeType(value, p.PropertyType));
+                        Console.WriteLine("{0} - {1}", p.Name, p.PropertyType);
+                    }
+                }
             });
+
             Console.Read();
         }
 
+        public static Type GetType(PropertyInfo p)
+        {
+            if (Nullable.GetUnderlyingType(p.PropertyType) != null)
+                return Nullable.GetUnderlyingType(p.PropertyType);
+            return p.PropertyType;
+        }
 
+        public static bool IsNullable<T>(T value)
+        {
+            return Nullable.GetUnderlyingType(typeof(T)) != null;
+        }
 
-        public class CSVFile<T> where T : class
+        public class CSV<T> where T : class
         {
             private string fileContent;
             private char _seperator;
             private string _fileHeader;
             private List<string> _headers;
             private List<string> _lines;
-            private List<FileRow> _rows;
-            private List<Row<T>> _tuples;
+            private List<CSVRow<T>> _tuples;
             private List<Type> supportedTypes;
+            private List<string> _requiredHeaders;
 
-            public CSVFile(string path, char seperator)
+            public CSV(string path, char seperator, string requiredHeaders)
             {
                 if (File.Exists(path) && !string.IsNullOrEmpty(Convert.ToString(seperator)))
                 {
@@ -48,8 +101,12 @@ namespace CSVReader.Black
                     _seperator = seperator;
                     _lines = new List<string>();
                     _headers = new List<string>();
-                    _rows = new List<FileRow>();
-                    _tuples = new List<Row<T>>();
+                    _tuples = new List<CSVRow<T>>();
+
+                    if (!string.IsNullOrEmpty(requiredHeaders))
+                    {
+                        _requiredHeaders = requiredHeaders.Split(',').ToList();
+                    }
                     initSupportedTypes();
                     ProcessFile();
                 }
@@ -102,25 +159,28 @@ namespace CSVReader.Black
                 {
                     if (!string.IsNullOrEmpty(line))
                     {
-                        FileRow row = new FileRow();
-                        Row<T> tuple = new Row<T>(line);
+                        CSVRow<T> tuple = new CSVRow<T>(line);
                         string[] values = line.Split(_seperator);
 
                         for (var i = 0; i < _headers.Count; i++)
                         {
-                            tuple.Values.Add(new FileValue()
+                            tuple.Values.Add(new CSVValue()
                             {
                                 Name = _headers[i],
                                 Value = Convert.ToString(values[i])
                             });
                         }
-                        _rows.Add(row);
                         _tuples.Add(tuple);
                     }
                 }
             }
-
-            public List<Row<T>> GetData()
+            Type GetType(PropertyInfo p)
+            {
+                if (Nullable.GetUnderlyingType(p.PropertyType) != null)
+                    return Nullable.GetUnderlyingType(p.PropertyType);
+                return p.PropertyType;
+            }
+            public List<CSVRow<T>> GetData()
             {
                 List<PropertyInfo> properties = typeof(T).GetProperties().AsEnumerable().ToList();
                 List<T> data = new List<T>();
@@ -144,19 +204,32 @@ namespace CSVReader.Black
                         {
                             if (hasHeader(p.Name))
                             {
-                                if (supportsType(p.PropertyType))
+                                if (supportsType(GetType(p)))
                                 {
                                     if (p.CanWrite)
                                     {
                                         var value = tuple.GetValue(p.Name).Value;
                                         try
                                         {
-                                            p.SetValue(obj, Convert.ChangeType(value, p.PropertyType));
+                                            if (!string.IsNullOrEmpty(value))
+                                            {
+                                                if (Nullable.GetUnderlyingType(p.PropertyType) != null)
+                                                    p.SetValue(obj, Convert.ChangeType(value, Nullable.GetUnderlyingType(p.PropertyType)));
+                                                else
+                                                    p.SetValue(obj, Convert.ChangeType(value, p.PropertyType));
+                                            }
+                                            else
+                                            {
+                                                if (isRequired(p.Name))
+                                                {
+                                                    tuple.Error(string.Format("[{0}] {1}", p.Name, ErrorStrings.PropertyIsRequired));
+                                                }
+                                            }
                                         }
-                                        catch(Exception ex)
+                                        catch (Exception ex)
                                         {
                                             tuple.Error(string.Format("{0} of Property [{1}] with value [\"{2}\"] of type [{3}]", ErrorStrings.UnableToSetValue, p.Name, value, p.PropertyType.Name));
-                                        }      
+                                        }
                                     }
                                     else
                                     {
@@ -176,7 +249,6 @@ namespace CSVReader.Black
 
                 });
                 return _tuples;
-                //return data;
             }
 
             bool supportsType(Type t)
@@ -189,11 +261,15 @@ namespace CSVReader.Black
                 return _headers.Any(o => o.ToLower() == header.ToLower());
             }
 
-            FileRow GetRow(int index)
+            bool isRequired(string header)
             {
-                if (index >= 0 && index < _rows.Count)
+                return _requiredHeaders.Any(o => o.ToLower() == header.ToLower());
+            }
+            CSVRow<T> GetRow(int index)
+            {
+                if (index >= 0 && index < _tuples.Count)
                 {
-                    return _rows[index];
+                    return _tuples[index];
                 }
                 return null;
             }
@@ -204,7 +280,7 @@ namespace CSVReader.Black
                 List<U> fv = new List<U>();
                 if (_headers.Any(o => o.ToLower() == colname))
                 {
-                    _rows.ForEach(o =>
+                    _tuples.ForEach(o =>
                     {
                         string value = o.Values.Where(m => m.Name.ToLower() == colname).Select(n => n.Value).FirstOrDefault();
                         fv.Add((U)Convert.ChangeType(value, typeof(U)));
@@ -213,9 +289,6 @@ namespace CSVReader.Black
 
                 return fv;
             }
-
-        
-
         }
         enum ErrorType
         {
@@ -232,7 +305,7 @@ namespace CSVReader.Black
             public static string TypeNotSupported = "Instance of Specified Type Could not be created";
             public static string PropertyNoWritable = "Instance of Specified Type Could not be created";
             public static string UnableToSetValue = "Unable to set value";
-
+            public static string PropertyIsRequired = "Property is Required and Cannot be empty";
         }
 
         public class Validation
@@ -265,17 +338,17 @@ namespace CSVReader.Black
                 Errors.Add(error);
             }
         }
-        public class Row<V> where V : class
+        public class CSVRow<V> where V : class
         {
-            public List<FileValue> Values { get; set; }
+            public List<CSVValue> Values { get; set; }
             public V row { get; set; }
             public string rawString { get; }
             public Validation validation { get; set; }
-            public Row(string line)
+            public CSVRow(string line)
             {
                 rawString = line;
                 validation = new Validation();
-                Values = new List<FileValue>();
+                Values = new List<CSVValue>();
             }
             public bool Valid
             {
@@ -290,7 +363,7 @@ namespace CSVReader.Black
                 validation.Error(error);
             }
 
-            public FileValue GetValue(string Name)
+            public CSVValue GetValue(string Name)
             {
                 return Values.Where(o => o.Name.ToLower() == Name.ToLower()).FirstOrDefault();
             }
@@ -299,26 +372,7 @@ namespace CSVReader.Black
                 return string.Join(",", Values.Select(o => o.Value).ToArray());
             }
         }
-
-        public class FileRow
-        {
-            public List<FileValue> Values { get; set; }
-            public FileRow()
-            {
-                Values = new List<FileValue>();
-            }
-
-            public FileValue GetValue(string Name)
-            {
-                return Values.Where(o => o.Name.ToLower() == Name.ToLower()).FirstOrDefault();
-            }
-            public override string ToString()
-            {
-                return string.Join(",", Values.Select(o => o.Value).ToArray());
-            }
-        }
-
-        public class FileValue
+        public class CSVValue
         {
             public string Name { get; set; }
             public string Value { get; set; }
@@ -330,8 +384,26 @@ namespace CSVReader.Black
             public string FirstName { get; set; }
             public string LastName { get; set; }
             public string Age { get; set; }
-            public List<string> Email { get; set; }
+            public string Email { get; set; }
             public string Gender { get; set; }
         }
+
+        public class Lookup
+        {
+            public Guid LookupId { get; set; }
+            public Guid FacilityId { get; set; }
+            public int LookupTypeId { get; set; }
+            public string Name { get; set; }
+            public string Description { get; set; }
+            //public bool IsActiveA { get; set; }
+            //public bool IsNew { get; set; }
+            public int? LookupTypeCategoryId { get; set; }
+            public string CreatedBy { get; set; }
+            public DateTime CreatedOn { get; set; }
+            public string ModifiedBy { get; set; }
+            public DateTime? ModifiedOn { get; set; }
+            //public bool? ConfigDisplay { get; set; }
+        }
+
     }
 }
